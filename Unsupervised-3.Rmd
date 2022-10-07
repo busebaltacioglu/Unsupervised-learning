@@ -1,0 +1,884 @@
+---
+title: "Unsupervised"
+author: "Buse Baltacıoğlu"
+date: "17 06 2020"
+output: word_document
+---
+
+Kütüphaneler
+```{r}
+library(cluster)
+library(factoextra)
+library(fpc)
+library(readr)
+library(fossil)
+library(clustertend)
+library(NbClust)
+library(clValid)
+library(dendextend)
+library(mclust)
+library(dbscan)
+
+```
+
+Veri Hazırlığı
+```{r}
+data=BCW[-c(1,2,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32)]
+
+rownames(data)=BCW$X1
+colnames(data)=c("yaricap","doku","cevre","alan","puruzsuzluk","yogunluk","icbukeylik","icbukeynoktalar","simetri","fraktalboyut")
+head(data)
+```
+
+
+
+
+
+#1.	Hücre çekirdeğine ait özelliklerin tanımlayıcı istatistiklerini elde ederek, yorumlayınız. 
+```{r}
+table(BCW[,2])
+
+boxplot(data, col = "bisque")
+summary(data)
+```
+-yarıçap 14 ortalama ile yaklaşık 7 ve 28 arasında değişmektedir.
+-doku 19 ortalama ile yaklaşık 10 ve 39 arasında değişmektedir.
+-çevre 92 ortalama ile yaklaşık 44 ve 189 arasında değişmektedir.
+-alan 655 ortalama ile yaklaşık 144 v 2501 arasında değişmektedir.
+-pürüzsüzlük, yoğunluk, içbükeylik, içbükeynoktalar, simetri, fraktal boyut değişkenlerinin ortalaması ve değişimi benzerdir.
+
+```{r}
+apply(data, 2, sd)
+```
+-En yüksek değişime sahip değişken alan değişkenidir.
+-En az değişime sahip değişken fraktal boyut değişenidir.
+
+Bu değişkenlerin ölçekleri ve değişimleri birbirinden farklı olduğu için standartlaştırmalıyız
+```{r}
+df=scale(data)
+head(df)
+summary(df)
+boxplot(df, col="bisque")
+
+```
+
+-Veri setimizdeki değişkenler sağa çarpık durmakta ve dolayısıyla uç değerler bulunmaktadır.
+
+
+
+
+
+#2.	Korelasyon matrisi elde ederek, yorumlayınız. 
+```{r}
+cor_df=cor(df)
+cor_df
+corrplot::corrplot.mixed(cor_df)
+```
+-Yarıçap ve çevre arasında doğrusal anlamda tam uyum bulunmaktadır.
+-yarıçap:alan, çevre:alan arasında da pozitif yönlü çok güçlü doğrusal bir ilişki bulunmaktadır.
+-doku ile pürüzsüzlük arasında doğrusal bir ilişki bulunmamaktadır.
+-yarıçap ile fraktalboyut arasında negatif yönlü güçsüz bir ilişki bulunmaktadır.
+
+
+
+
+
+#3.	Değişkenler için kutu grafiği (box-plot) çizdirerek, yorumlayınız.
+```{r}
+boxplot(data, col = "bisque")
+boxplot(df, col = "bisque")
+```
+-Orijinal veri setimizın box-plotına baktığımızda alan değişkeninin diğer değişkenlere göre çok daha fazla değişime sahiptir.
+-Veri setimizi standartlaştırıp box-ploatına baktığımızda değişkenlerimizin sağa çarpık olduğunu görmekteyiz ve dolayısıyla uç değerlerimiz bulunmaktadır.
+
+
+
+
+
+#4.	Temel bileşenler analizi uygulayınız.
+```{r}
+pca=prcomp(data, center = TRUE, scale. = TRUE)
+pca
+```
+
+a.	Bileşen sayısına gerekçelerinizi belirterek karar veriniz. 
+
+```{r}
+fviz_eig(pca)
+```
+-Scree plottaki dirsek noktası değeri bize 3 temel bileşen olarak görünmektedir.
+
+```{r}
+summary(pca)
+```
+-Kümülatif varyans açıklama oranının %75'den büyük olması yeterlidir bu değerlere göre 2 temel bileşen (%80 açıklama oranı bulunmaktadir) uygun görülmektedir.
+
+```{r}
+(pca$sdev)^2
+```
+-Korelasyon matrisini kullandığımız için özdeğerlerin 1'den büyük olanlarının sayısı yeterli bulunmaktadır bu özdeğerlere göre 2 temel bileşen yeterli bulunmaktadır.
+
+***Bu üç kurala göre değerlendirdiğimizde 2 temel bileşen üzerinde çalışmaya karar verdik.
+
+
+b.	Görseller üzerinden, değişkenler ve gözlemler için yorumlama yapınız.
+
+```{r}
+fviz_pca_ind(pca, title = "PCA - BCW data",
+             habillage = BCW$X2,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom",
+             repel = TRUE)
+```
+-Grafiğe baktığımızda iki küme olabilir gibi durmaktadır hedef değişkenimizinde iki kategoride olaması bu düşüncemizi desteklemektedir. 
+-Uç değerlerin olması kümeler içi homojen olma kuralını zorlamaktadır.
+
+```{r}
+fviz_pca_var(pca,
+             col.var="contrib", 
+             gradient.cols=c("#00AFBB","#E7B800",
+                             "#FC4E07"),
+             pointsize=2,
+             repel = FALSE)
+```
+-Yarıçap:Çevre:Doku değişkenleri aynı yönde güçlü bir ilişkileri bulunmaktadır.
+-Simetri ve pürüzlük arasında da aynı yönlü ilişki bulunmaktadır.
+-doku ve simetri:pürüzlük arasında ilişki bulunmamaktadır.
+Korelasyon matrisinin ile bu grafik yorumları birbirini desteklemektedir.
+
+
+```{r}
+fviz_pca_biplot(pca, repel = FALSE,
+                col.var = "#2E9FDF",
+                gradient.cols=c("#00AFBB","#E7B800", "#FC4E07"),
+                col.ind = "#696969",
+                habillage = BCW$X2,
+                pointsize = 1,
+                ggtheme=theme_minimal())
+```
+-
+-
+-
+
+
+
+
+
+## Bileşen sayısına karşılık gelen yeni gözlem değerlerinizi elde ediniz. Diğer soruları bu değerleri kullanarak çözümleyiniz.
+```{r}
+pca$rotation
+head(pca$x)
+pca_data=pca$x[,1:2]
+head(pca_data)
+
+cor(pca_data)
+
+```
+
+
+
+
+
+#5.	K-ortalamalar ile kümeleme analizi uygulayarak, yorumlayınız. 
+```{r}
+p1=fviz_nbclust(pca_data, kmeans, nstart = 25, iter.max = 200, method = "wss") +
+  labs(subtitle = "Elbow method")
+
+p2=fviz_nbclust(pca_data, kmeans, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+       
+set.seed(123)
+p3=fviz_nbclust(pca_data, kmeans, nstart = 25, method = "gap_stat", nboot = 50)+
+  labs(subtitle = "Gap statistic method")
+
+gridExtra::grid.arrange(p1, p2, p3, nrow = 1)
+
+```
+ Kmeans için küme sayısının belirlenmesi için baktığımızda wss=4, silhouette=2 ve gap=2'yi vermektedir. 
+wss:4, sil:2, gap:2 
+
+k=2
+```{r}
+set.seed(123)
+km_res=kmeans(pca_data, 2, nstart = 25)
+km_res
+
+fviz_cluster(km_res, data = pca_data,
+              palette = c("#2E9FDF", "#FC4E07"),
+              ellipse.type = "euclid", 
+              star.plot=TRUE, 
+              repel=FALSE,
+              ggtheme=theme_minimal())
+             
+```
+
+```{r}
+table(km_res$cluster, BCW$X2)
+r_i_kmeans=rand.index(km_res$cluster, BCW$X2)
+r_i_kmeans
+```
+
+k=2  →  avo = %48.5
+-Varyans açıklama oranı %48.5'tir bu oran yetersiz bulunmaktadır ve grafiğe baktığımızda 1. küme heterojen durmaktadır bu sebepten k-means için küme sayısı 2 olduğunda yetersizdir.
+Bu işlev, iki farklı kümeleme sonucu için Rand Endeksini hesaplar. Rand Endeksi, 0 ile 1 arasında bir değer verir; burada 1 iki kümeleme sonucunun özdeş(benzer) olduğu anlamına gelir.
+
+
+k=4
+```{r}
+set.seed(123)
+km_res4=kmeans(pca_data, 4, nstart = 25)
+km_res4
+
+fviz_cluster(km_res4, data = pca_data,
+              palette = c("#2E9FDF", "#FC4E07","purple","pink"),
+              ellipse.type = "euclid", 
+              star.plot=TRUE, 
+              repel=FALSE,
+              ggtheme=theme_minimal())
+```
+
+
+
+
+#6.	K-medoids ile kümeleme analizi uygulayarak,  yorumlayınız. 
+-Pam
+```{r}
+
+p11=fviz_nbclust(pca_data, pam, method = "wss") +
+  labs(subtitle = "Elbow method")
+
+p21=fviz_nbclust(pca_data, pam, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+
+set.seed(123)
+p31=fviz_nbclust(pca_data, pam, method = "gap_stat")+
+  labs(subtitle = "Gap statistic method")
+
+gridExtra::grid.arrange(p11, p21, p31, nrow = 1)
+
+```
+wss:6, sil:2, gap:2
+
+k=2
+```{r}
+pam=pam(pca_data, 2)
+print(pam)
+
+pam$objective
+
+fviz_cluster(pam,
+             palette=c("#00AFBB","#FC4E07","#828282","#291891"),
+             ellipse.type = "t",
+             repel = FALSE,
+             ggtheme = theme_classic())
+
+```
+-Hücre çekirdeklerinin pam algoritmasını kullanarak kümelediğimizde build 1.807 ve swap 1.700 değerini vermektedir.
+```{r}
+table(pam$clustering, BCW$X2)
+r_i_pam=rand.index(pam$clustering, BCW$X2)
+r_i_pam
+```
+
+-build=1.806580
+-swap=1.700399
+ PAM algoritması BUILD ve SWAP olmak üzere iki kısımdan oluşuyor. BUILD de her nesne ile seçilmiş medoidler arasındaki uzaklıklar hesaplanıyor. Amaç fonksiyonu (objective function) bu uzaklık ortalaması ya da toplamı için en küçük değere ulaşmak. Sonrasında medoid olmayanlar ile medoidler yer değiştiriyor(SWAP) Burada amaç daha iyi medoid noktaları tanımlanabiliyor mu bu da ancak amaç fonksiyonu değerinin azalması ile mümkün olabilir. 
+ Amaç fonksiyonunu min yapmak
+
+---
+k=6
+```{r}
+pam6=pam(pca_data, 6)
+print(pam6)
+
+pam6$objective
+
+fviz_cluster(pam6,
+             palette=c("#00AFBB","#FC4E07","#828282","#291891","purple","yellow"),
+             ellipse.type = "t",
+             repel = FALSE,
+             ggtheme = theme_classic())
+
+```
+
+
+-Clara
+```{r}
+p12=fviz_nbclust(pca_data, clara, method = "wss") +
+  labs(subtitle = "Elbow method")
+
+p22=fviz_nbclust(pca_data, clara, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+
+set.seed(123)
+p32=fviz_nbclust(pca_data, clara, method = "gap_stat")+
+  labs(subtitle = "Gap statistic method")
+
+gridExtra::grid.arrange(p12, p22, p32, nrow = 1)
+```
+wss=5, sil=2, gap=2
+
+k=2
+```{r}
+clara=clara(pca_data, 2, samples = 50, pamLike = TRUE)
+print(clara)
+
+clara$objective
+
+fviz_cluster(clara, 
+             palette=c("#00AFBB", "#FC4E07"),
+             ellipse.type = "t",
+             geom = "point",
+             pointsize = 1,
+             ggtheme = theme_classic())
+```
+-Objective func=1.703617
+```{r}
+table(clara$clustering, BCW$X2)
+r_i_clara=rand.index(clara$clustering, BCW$X2)
+r_i_clara
+```
+
+k=5
+```{r}
+clara5=clara(pca_data, 5, samples = 50, pamLike = TRUE)
+print(clara5)
+
+clara5$objective
+
+fviz_cluster(clara5, 
+             palette=c("#00AFBB","#FC4E07","#828282","#291891","#A00898"),
+             ellipse.type = "t",
+             geom = "point",
+             pointsize = 1,
+             ggtheme = theme_classic())
+```
+
+
+
+
+#7.	Aşamalı kümeleme analizi uygulayarak, yorumlayınız. 
+```{r}
+q1 <- fviz_nbclust(pca_data, FUN = hcut, method = "wss", 
+                   k.max = 10) +
+  ggtitle("(A) Elbow method")
+q2 <- fviz_nbclust(pca_data, FUN = hcut, method = "silhouette", 
+                   k.max = 10) +
+  ggtitle("(B) Silhouette method")
+q3 <- fviz_nbclust(pca_data, FUN = hcut, method = "gap_stat", 
+                   k.max = 10) +
+  ggtitle("(C) Gap statistic")
+
+gridExtra::grid.arrange(q1, q2, q3, nrow = 1)
+
+```
+wss=6, sil=2, gap=2
+##Uzaklık Ölçüleri
+```{r}
+d_euc=dist(pca_data, method = "euclidean")
+fviz_dist(d_euc)
+
+d_man=dist(pca_data, method = "manhattan")
+fviz_dist(d_man)
+
+d_pear=get_dist(pca_data, method = "pearson")
+fviz_dist(d_pear)
+
+```
+##ward.D2 yöntemi ile
+```{r}
+hc_e=hclust(d=d_euc, method="ward.D2")
+fviz_dend(hc_e,cex=.5)
+
+hc_m=hclust(d=d_man, method="ward.D2")
+fviz_dend(hc_m,cex=.5) 
+
+hc_pear=hclust(d=d_pear, method="ward.D2")
+fviz_dend(hc_pear,cex=.5)
+
+coph_e=cophenetic(hc_e)
+cor_e=cor(d_euc,coph_e)
+
+coph_m=cophenetic(hc_m)
+cor_m=cor(d_man,coph_m)
+
+coph_pear=cophenetic(hc_pear)
+cor_p=cor(d_pear,coph_pear)
+
+cbind(cor_e,cor_m,cor_p)
+
+new<-NbClust(pca_data, distance = "euclidean", min.nc=2, max.nc=10, 
+            method = "ward.D2", index = "all")
+#k=2
+nmw<-NbClust(pca_data, distance = "manhattan", min.nc=2, max.nc=10, 
+            method = "ward.D2", index = "all")
+#k=2-3
+```
+
+##avarage linkage yöntemi ile
+```{r}
+hc_e2=hclust(d=d_euc, method="average")
+fviz_dend(hc_e2,cex=.5) 
+
+hc_m2=hclust(d=d_man, method="average")
+fviz_dend(hc_m2,cex=.5)
+
+hc_pear2=hclust(d=d_pear, method="average")
+fviz_dend(hc_pear2,cex=.5)
+
+coph_e2=cophenetic(hc_e2)
+cor_e2=cor(d_euc,coph_e2)
+
+coph_m2=cophenetic(hc_m2)
+cor_m2=cor(d_man,coph_m2)
+
+coph_pear2=cophenetic(hc_pear2)
+cor_p2=cor(d_pear,coph_pear2)
+
+cbind(cor_e2,cor_m2,cor_p2)
+
+nea<-NbClust(pca_data, distance = "euclidean", min.nc=2, max.nc=10, 
+            method = "average", index = "all")
+#k=2
+
+nma<-NbClust(df, distance = "manhattan", min.nc=2, max.nc=10, 
+            method = "average", index = "all")
+#k=2-3
+```
+##median linkage yöntemi ile
+```{r}
+hc_e3=hclust(d=d_euc, method="median")
+fviz_dend(hc_e3,cex=.5) 
+
+hc_m3=hclust(d=d_man, method="median")
+fviz_dend(hc_m3,cex=.5)
+
+hc_pear3=hclust(d=d_pear, method="median")
+fviz_dend(hc_pear3,cex=.5)
+
+coph_e3=cophenetic(hc_e3)
+cor_e3=cor(d_euc,coph_e3)
+
+coph_m3=cophenetic(hc_m3)
+cor_m3=cor(d_man,coph_m3)
+
+coph_pear3=cophenetic(hc_pear3)
+cor_p3=cor(d_pear,coph_pear3)
+
+cbind(cor_e3,cor_m3,cor_p3)
+
+nem<-NbClust(df, distance = "euclidean", min.nc=2, max.nc=10, 
+            method = "median", index = "all")
+#k=2
+
+nmm<-NbClust(df, distance = "manhattan", min.nc=2, max.nc=10, 
+            method = "median", index = "all")
+#k=2-4
+```
+k=2
+```{r}
+#pearson-ward.D2
+hc_pw=eclust(pca_data, "hclust", k=2, hc_metric = "pearson", hc_method = "ward.D2",graph = FALSE)
+
+fviz_dend(hc_pw, palette = c("#291891","#A00898"),
+          as.ggplot = TRUE, show_labels = FALSE, color_labels_by_k = TRUE, rect = TRUE)
+
+fviz_pca_ind(pca, title = "Pearson- Ward.D2",
+             habillage = hc_pw$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+table(hc_pw$cluster, BCW$X2)
+r_i_hpw=rand.index(hc_pw$cluster, BCW$X2)
+r_i_hpw
+```
+
+```{r}
+#euclidean-average
+hc_ea2=eclust(pca_data, "hclust", k=2, hc_metric = "euclidean", hc_method = "average",graph = FALSE)
+
+fviz_dend(hc_ea2, palette = c("#291891","#A00898","green"),
+          as.ggplot = TRUE, show_labels = FALSE,color_labels_by_k = TRUE, rect = TRUE)
+
+fviz_pca_ind(pca, title = "PCA - BCW data",
+             habillage = hc_ea2$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+table(hc_ea2$cluster, BCW$X2)
+r_i_hea=rand.index(hc_ea2$cluster, BCW$X2)
+r_i_hea
+```
+
+```{r}
+#manhattan-average
+hc_ma=eclust(pca_data, "hclust", k=2, hc_metric = "manhattan", hc_method = "average",graph = FALSE)
+
+fviz_dend(hc_ma, palette = c("#291891","#A00898"),
+          as.ggplot = TRUE, show_labels = FALSE,color_labels_by_k = TRUE, rect = TRUE)
+
+fviz_pca_ind(pca, title = "PCA - BCW data",
+             habillage = hc_ma$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+table(hc_ma$cluster, BCW$X2)
+r_i_hma=rand.index(hc_ma$cluster, BCW$X2)
+r_i_hma
+```
+
+
+```{r}
+#pearson-average
+hc_pa=eclust(pca_data, "hclust", k=2, hc_metric = "euclidean", hc_method = "average",graph = FALSE)
+
+fviz_dend(hc_pa, palette = c("#291891","#A00898","green"),
+          as.ggplot = TRUE, show_labels = FALSE,color_labels_by_k = TRUE, rect = TRUE)
+
+fviz_pca_ind(pca, title = "PCA - BCW data",
+             habillage = hc_pa$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+table(hc_pa$cluster, BCW$X2)
+r_i_hpa=rand.index(hc_pa$cluster, BCW$X2)
+r_i_hpa
+```
+
+```{r}
+#pearson-median
+hc_pm=eclust(pca_data, "hclust", k=2, hc_metric = "pearson", hc_method = "median",graph = FALSE)
+
+fviz_dend(hc_pm, palette = c("#291891","#A00898"),
+          as.ggplot = TRUE, show_labels = FALSE,color_labels_by_k = TRUE, 
+          rect = TRUE)
+table(hc_pm$cluster)
+
+fviz_pca_ind(pca, title = "PCA - BCW data",
+             habillage = hc_pm$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+table(hc_pm$cluster, BCW$X2)
+r_i_hpm=rand.index(hc_pm$cluster, BCW$X2)
+r_i_hpm
+```
+
+
+
+
+
+#8.	Model temelli kümeleme analizi uygulayarak, yorumlayınız. 
+```{r}
+mbc=Mclust(pca_data)
+summary(mbc)
+mbc$modelName
+mbc$d
+mbc$G
+mbc$bic
+head(mbc$z) #Her bir gözlemin hangi kümede olma olasılıklarını verir
+head(mbc$classification)
+fviz_mclust(mbc, "BIC", palette = "jco")
+fviz_mclust(mbc, "classification", geom = "point",
+            pointsize = 1.5, palette = "jco")
+
+
+fviz_mclust(mbc, "uncertainty", palette = "jco",pos = FALSE)
+#büyük semboller daha belirsiz olan gözlemleri gösterir.
+table(mbc$classification, BCW$X2)
+r_i_mbc=rand.index(mbc$classification, BCW$X2)
+r_i_mbc
+```
+-Model temelli kümeleme, verilerin bir model tarafından oluşturulduğunu varsayar ve kümeleme, veriden orijinal modele erişmeye çalışır. Erişilen model ile kümeler tanımlanır.
+-k-ortalamadan farklı olarak, model tabanlı kümeleme, her veri noktasının her bir kümeye ait olma olasılığına sahip olduğu bir atama kullanır.
+-Model parametreleri, hiyerarşik model tabanlı kümelemeden yararlanılarak başlatılan Beklenti Maksimizasyonu (EM) algoritması kullanılarak tahmin edilebilir.
+-Bu veri seti için VVI, kümelerin hacim ve şekli değişken olduğu ve benzer yönelime sahip oldukları anlamına gelir.
+-En iyi model Bayesian Bilgi Ölçütü (BIC) kullanılarak seçilir. 
+-Normalde BIC'in küçük olduğu değere bakılır (her zaman negatif değerler verir) fakat bu pakette büyük olanı bakıyoruz.
+-Büyük bir BIC puanı, karşılık gelen model için güçlü kanıtlar olduğunu gösterir.
+
+
+
+#9.	Yoğunluk temelli kümeleme analizi uygulayarak, yorumlayınız. 
+```{r}
+
+dbscan::kNNdistplot(pca_data, k = 2)
+abline(h = 0.55, lty = 2)
+
+
+dbc=dbscan(pca_data, eps = 0.55, minPts = 7)
+print(dbc)
+
+
+fviz_cluster(dbc, data = pca_data, k=2, stand = FALSE,
+             ellipse = FALSE, show.clust.cent = FALSE,
+             geom = "point",palette = "jco", ggtheme = theme_classic())
+
+table(dbc$cluster, BCW$X2)
+r_i_dbc=rand.index(dbc$cluster, BCW$X2)
+r_i_dbc
+```
+-Gürültü ve aykırı değerler içeren bir veri setinin herhangi bir şekildeki kümelerini tanımlamak için geliştirmişlerdir.
+-Ana fikir, bir kümenin her noktası için, belirli bir yarıçapın
+komşusunun en az minimum sayıda nokta içermesi gerektiğidir.
+
+MinPts: :
+•minPts'en az 3 seçilmelidir.
+
+•Veri seti ne kadar büyük olursa, minPts değeri de o kadar büyük seçilmelidir.
+
+eps(E):
+
+•Değeri k--mesafe grafiği kullanılarak seçilebilir. 
+
+•Bu grafiğin güçlü bir bükülme gösterdiği yer epsilon için uygun değerlerdir.
+
+-Epsilon çok küçük seçilirse, seyrek kümeler gürültü olarak tanımlanır. 
+
+-Epsilon çok büyük seçilirse, yoğun kümeler birleştirilebilir.
+
+
+#10.	Küme geçerliliği istatistiklerini de dikkate alarak seçtiğiniz en uygun kümeleme analizi yöntemini gerekçelerinizle belirtiniz. (Diğer şıklar içinde değerlendirildiyse burada özet bilgi şeklinde verilebilir.)
+
+```{r}
+clmethods=c("kmeans","pam","clara","hierarchical")
+```
+
+```{r}
+intern=clValid(pca_data, nClust = 2,
+                  clMethods = clmethods, validation = "internal")
+summary(intern)
+```
+```{r}
+stab = clValid(df, nClust = 2, clMethods = clmethods,
+                validation = "stability")
+summary(stab)
+
+optimalScores(stab)
+```
+
+```{r}
+cbind(r_i_kmeans,r_i_pam,r_i_clara,r_i_hpw,r_i_hea,r_i_hma,r_i_hpa,r_i_hpm,r_i_mbc,r_i_dbc)
+```
+
+Bu işlev, iki farklı kümeleme sonucu için Rand Endeksini hesaplar. Rand Endeksi, 0 ile 1 arasında bir değer verir; burada 1 iki kümeleme sonucunun özdeş(benzer) olduğu anlamına gelir.
+
+Bu veri setinde hedef değişkenimiz 2 kümeden oluşmaktadır hedef değişkeni en iyi açıklayıcak
+
+
+
+
+
+###kmeans
+
+```{r}
+set.seed(123)
+km_res_o=kmeans(data, 2, nstart = 25)
+km_res_o
+
+fviz_cluster(km_res_o, data = data,
+              palette = c("#2E9FDF", "#FC4E07"),
+              ellipse.type = "euclid", 
+              star.plot=TRUE, 
+              repel=FALSE,
+              ggtheme=theme_minimal())
+```
+
+```{r}
+table(km_res_o$cluster, BCW$X2)
+rand.index(km_res_o$cluster, BCW$X2)
+
+```
+
+###pam
+```{r}
+pam_o=pam(data, 2)
+print(pam_o)
+
+pam_o$objective
+
+fviz_cluster(pam_o,
+             palette=c("#00AFBB","#FC4E07","#828282","#291891"),
+             ellipse.type = "t",
+             repel = FALSE,
+             ggtheme = theme_classic())
+
+```
+```{r}
+table(pam_o$clustering, BCW$X2)
+rand.index(pam_o$clustering, BCW$X2)
+```
+
+
+###clara
+```{r}
+clara_o=clara(data, 2, samples = 50, pamLike = TRUE)
+print(clara_o)
+
+clara_o$objective
+
+fviz_cluster(clara_o, 
+             palette=c("#00AFBB", "#FC4E07"),
+             ellipse.type = "t",
+             repel = FALSE,
+             geom = "point",
+             pointsize = 1,
+             ggtheme = theme_classic())
+
+```
+
+```{r}
+table(clara_o$clustering, BCW$X2)
+rand.index(clara_o$clustering, BCW$X2)
+```
+
+###Hiyerarşik
+
+```{r}
+#pearson-ward.D2
+hc_pw_o=eclust(df, "hclust", k=2, hc_metric = "pearson", hc_method = "ward.D2",graph = FALSE)
+
+fviz_dend(hc_pw_o, palette = c("#291891","#A00898"),title = "Pearson- Ward.D2",
+          as.ggplot = TRUE, show_labels = FALSE, color_labels_by_k = TRUE, rect = TRUE)
+
+fviz_pca_ind(pca, title = "Pearson- Ward.D2",
+             habillage = hc_pw_o$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+table(hc_pw_o$cluster, BCW$X2)
+rand.index(hc_pw_o$cluster, BCW$X2)
+
+```
+
+
+```{r}
+#pearson-median
+hc_pm_o=eclust(data, "hclust", k=2, hc_metric = "pearson", hc_method = "median",graph = FALSE)
+
+fviz_dend(hc_pm_o, palette = c("#291891","#A00898"),
+          as.ggplot = TRUE, show_labels = FALSE,color_labels_by_k = TRUE, 
+          rect = TRUE)
+
+fviz_pca_ind(pca, title = "PCA - BCW data",
+             habillage = hc_pm_o$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+table(hc_pm_o$cluster, BCW$X2)
+rand.index(hc_pm_o$cluster, BCW$X2)
+
+```
+
+###Model tabanlı 
+```{r}
+mbc_o=Mclust(data)
+summary(mbc_o)
+
+fviz_mclust(mbc_o, "BIC", palette = "jco")
+fviz_mclust(mbc_o, "classification", geom = "point",
+            pointsize = 1.5, palette = "jco")
+
+
+fviz_mclust(mbc_o, "uncertainty", palette = "jco",pos = FALSE)
+
+table(mbc_o$classification, BCW$X2)
+rand.index(mbc_o$classification, BCW$X2)
+
+```
+
+
+
+
+
+
+#11.	Finalde elde etmiş olduğunuz kümelerin tanımlayıcı istatistiklerini elde ederek yorumlayınız. (PCA skorlarını orijinal değerlerine çevirmeyi unutmayınız.) 
+-Clara Orijinal Değerler
+
+
+###clara
+```{r}
+clara_o=clara(data, 2, samples = 50, pamLike = TRUE, metric="manhattan")
+print(clara_o)
+
+clara_o$i.med
+clara_o$sample
+clara_o$clustering
+clara_o$silinfo
+clara_o$clusinfo
+clara_o$objective
+
+
+
+fviz_cluster(clara_o, 
+             palette=c("#00AFBB", "#FC4E07"),
+             ellipse.type = "t",
+             #geom = "point",
+             pointsize = 1,
+             ggtheme = theme_minimal())
+```
+
+```{r}
+table(clara_o$clustering, BCW$X2)
+rand.index(clara_o$clustering, BCW$X2)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

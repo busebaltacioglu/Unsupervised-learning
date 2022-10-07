@@ -1,0 +1,893 @@
+---
+title: "Unsupervised"
+author: "Buse Baltacıoğlu"
+date: "01 05 2020"
+output: pdf_document
+---
+
+Kütüphaneler
+```{r}
+library(cluster)
+library(factoextra)
+library(fpc)
+library(readr)
+library(fossil)
+library(clustertend)
+library(NbClust)
+library(clValid)
+library(dendextend)
+```
+	480 obs. of  17 variables:
+
+
+Name          : Faktör - Oyuncu Adı
+
+Team          : Faktör - Takım Adı (3 harfli kısaltma)
+
+Position      : Faktör - Oyuncu Pozisyonu (3 harfli kısaltma)
+ 
+Cost          : Oyuncunun Ortalama Maliyeti 
+
+Creativity    : Oyuncu performansını başkaları için gol atma fırsatları üretme açısından değerlendirir.
+
+Influence     : Bu, oyuncunun tek bir maçta veya sezon boyunca ne derece etki yaptığını değerlendirir.
+
+Threat        : Bir oyuncunun hedefe yönelik tehdidini inceleyen bir değer
+
+Goals_conceded: Oyuncu sahada iken atılan gol sayısı
+
+Goals_scored  : Oyuncu tarafından atılan goller
+
+Assists       : Oyuncu tarafından sağlanan asistler
+
+Own_goals     : Oyuncu tarafından atılan kendi kalesine atılan goller
+
+Yellow_cards  : Oyuncu tarafından alınan sarı kartlar
+
+Red_cards     : Oyuncu tarafından alınan kırmızı kartlar
+
+TSB           : Oyuncunun seçildiği takımların yüzdesi
+
+Minutes       : Oyuncunun oynadığı dakika
+
+Bonus         : Oyuncu tarafından alınan bonus puanları
+
+points        : Oyuncu tarafından atılan puanlar
+
+#1.	Tanımlayıcı istatistikleri elde ederek, yorumlayınız.
+1. Veri Hazırlığı
+```{r}
+
+FPL <- read_csv("C:/Users/Casper/Desktop/DSM ödev/take.home/FPL.csv")
+dim(FPL)
+head(FPL)
+data=FPL[-c(1,2,3)]
+name=as.character(FPL$Name)
+rownames(data)=name
+dim(data)
+head(data)  
+  
+  
+table(FPL[,2])
+table(FPL[,3])
+
+boxplot(data, col="bisque")
+summary(data)
+#cost: 53 ort ile 39 ve 129 arasında değişmektedir
+#creativity-influence-threat-minutes değişkenleri 0 ile çok büyük değerler arasında değişmekte 
+
+apply(data, 2, sd)
+#en yüksek değişime sahip değişken minutestir
+#Bu değişkenlerin ölçekleri ve değişimleri birbirinden farklı olduğu için standartlaştırmalıyız
+df=scale(data)
+head(df)
+summary(df)
+#Bu çıktıya bakıldığında çok fazla uç değer olduğu görülmekte ve kmeans uç değerlere hassas oludğu için k-medoids veya hiyerarşik daha iyi sonuçlar veriicek gibi duruyor
+boxplot(df, col = "bisque")
+
+```
+2. Özdeğerler ve Özvektörler
+```{r}
+cor_df=cor(df)
+cor_df
+corrplot::corrplot.mixed(cor_df)
+#Bu veri setinin değişkenleri arasında negatif yölü ilişki bulunmamaktadır.
+#cost-threat arasında 0.81 gücünde aynı yönlü ilişki vardır
+#cost-gol_scored arasında 0.77 gücünde aynı yönlü ilişki vardır
+
+cov_df=cov(df)
+cov_df
+#Değişkenlerin ölçekleri ve değişimi farklı olduğu için standartlaştırmıştık bu durumda korelasyon matrisini kullanmamız daha doğru sonuçlar ortaya koyucaktır.
+
+eigen_df=eigen(cor_df)
+eigen_df$values
+
+eigen_df$vectors
+
+
+```
+```{r}
+d_euc=dist(df, method = "euclidean")
+d_e=round(as.matrix(d_euc)[1:5, 1:5], 1)
+fviz_dist(d_euc)
+
+d_man=dist(df, method = "manhattan")
+d_m=round(as.matrix(d_man)[1:5, 1:5], 1)
+fviz_dist(d_man)
+
+d_pear=get_dist(df, method = "pearson")
+d_p=round(as.matrix(d_pear)[1:5, 1:5], 1)
+fviz_dist(d_pear)
+
+cbind(d_e, d_m, d_p)
+#Sonuçları kıyasladığımızda genellikle aynı yönde hareket etmişler zaten standartlaştırdığımız fakat uç değerlerimiz olduğu için öklit uzaklığını kullanmamız doğru sonuçlar vermiycektir 
+```
+
+
+#2.	Temel bileşenler analizi uygulayarak, yorumlayınız.
+1. Temel Bileşenlerin Oluşturulması
+```{r}
+pca=prcomp(df, center = TRUE, scale. = TRUE)
+pca
+#Korelasyon matrisi üzerinde çalışırken özdeğerlerin>1 olması, scree plot ve açıklama oranı>%75
+(pca$sdev)^2
+summary(pca)
+#Varyans açıklama oranların kümülatiflerine baktığımızda %54 ,%67, %74, %81,.. görünmekte amacımız daha az değişkenle yüksek açıklanma oranını sağlayabilmek olduğu için bizim için 3 bileşen yeterli görünmekte 
+fviz_eig(pca)
+
+biplot(pca)
+fviz_pca_biplot(pca, label = "var",
+                addEllipses=TRUE, ellipse.level=0.95,
+                ggtheme = theme_minimal())
+#Bu grafikte de görüldüğü gibi ters yönlü ilişki bulunmamakta
+#cost-goal_scored-threat gibi değişkenler aynı yönde güçlü bir ilişkileri bulunmakta
+#cost ile yellow_cards arasında ilişki bulunmamakta
+pca$rotation
+pc3_data=pca$x[,1:3]
+pc3_data
+#1. 2. ve 3. tba için yeni değişken gözlemleri
+cor(pc3_data)
+#birbirinden tamamen bağımsız 3 değişken buluyoruz
+
+```
+
+2. Bileşenlerin Görselleştirilmesi ve Yorumlanması
+```{r}
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             habillage = FPL$Position,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+#Nasıl kümeler oluşucak? kümeiçi homojen, kümeler arası heterojen olmalı
+#sadece yatay eksen üzerinden en sağ ve sol (summary(data)) ve orijinal değerleri ile yorumla
+#en solda olanlar yağ ve kuvvet indeksi en yüksek olanlar en sağda en düşük olanlar(bu seferde sağda sqs tın en yüksek olmasını bekliyoruz)
+#dikey eksen (10. gözlem için esn düşük 18. esn max yani dim2 için en üst grafikteki değerler düşük en alttakiler ens yüksek olduğu kısımlar)
+
+fviz_pca_var(pca,
+             col.var="contrib", 
+             gradient.cols=c("#00AFBB","#E7B800",
+                             "#FC4E07"),
+             pointsize=2,
+             repel = FALSE)
+
+fviz_pca_biplot(pca, repel = FALSE,
+                axes = c(1,2),
+                col.var = "#2E9FDF",
+                gradient.cols=c("#00AFBB","#E7B800",
+                             "#FC4E07"),
+                col.ind = "#696969",
+                pointsize = 1,
+                ggtheme=theme_minimal())
+
+
+fviz_pca_biplot(pca, repel = FALSE,
+                axes = c(1,3),
+                col.var = "#2E9FDF",
+                gradient.cols=c("#00AFBB","#E7B800",
+                             "#FC4E07"),
+                habillage = FPL$Position,
+                col.ind = "#696969",
+                pointsize = 1,
+                ggtheme=theme_minimal())
+
+
+fviz_pca_biplot(pca, repel = FALSE,
+                axes = c(2,3),
+                col.var = "#2E9FDF",
+                gradient.cols=c("#00AFBB","#E7B800",
+                             "#FC4E07"),
+                habillage = FPL$Position,
+                col.ind = "#696969",
+                pointsize = 1,
+                ggtheme=theme_minimal())
+
+```
+
+#3.	Kümeleme analizinde hangi yöntemi seçtiğinizi ve kaç küme belirlediğinizi gerekçeleriniz ile açıklayınız. Elde ettiğiniz sonuçları yorumlayınız.
+
+Ho:Df uniform dağılımdan gelir.
+H1:Df uniform dağılımdan gelmez.
+```{r}
+set.seed(123)
+h_data=hopkins(df, nrow(data)-1)
+h_data
+#0'a yakın old için Ho red uniform dağılımdan gelmez kümelemeye uygundur
+```
+
+
+```{r}
+#k-means
+p1=fviz_nbclust(df, kmeans, nstart = 25, iter.max = 200, method = "wss") +
+  labs(subtitle = "Elbow method")
+
+p2=fviz_nbclust(df, kmeans, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+       
+set.seed(123)
+p3=fviz_nbclust(df, kmeans, nstart = 25, method = "gap_stat", nboot = 50)+
+  labs(subtitle = "Gap statistic method")
+
+gridExtra::grid.arrange(p1, p2, p3, nrow = 1)
+
+#wss:6 %66,1
+#sil:2 %35,6
+#gap:10 %74,4
+
+#pam
+p11=fviz_nbclust(df, pam, method = "wss") +
+  labs(subtitle = "Elbow method")
+
+p21=fviz_nbclust(df, pam, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+
+set.seed(123)
+p31=fviz_nbclust(df, pam, method = "gap_stat")+
+  labs(subtitle = "Gap statistic method")
+
+gridExtra::grid.arrange(p11, p21, p31, nrow = 1)
+
+#wss:4 (2,06-2,04) 
+#sil:2 (2,51-2,42)
+#gap:9 (1,697-1,686)
+
+#clara
+p12=fviz_nbclust(df, clara, method = "wss") +
+  labs(subtitle = "Elbow method")
+
+p22=fviz_nbclust(df, clara, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+
+set.seed(123)
+p32=fviz_nbclust(df, clara, method = "gap_stat")+
+  labs(subtitle = "Gap statistic method")
+
+gridExtra::grid.arrange(p12, p22, p32, nrow = 1)
+
+#wss:5 (1,963)
+#sil:2 (2,417)
+#gap:9 (1,798)
+
+```
+
+```{r}
+clmethods=c("kmeans","pam","clara","hierarchical")
+intern=clValid(df, nClust = 2:7,
+                  clMethods = clmethods, validation = "internal")
+summary(intern)
+
+
+stab <- clValid(df, nClust = 2:5, clMethods = clmethods,
+                validation = "stability")
+summary(stab)
+# Display only optimal Scores
+optimalScores(stab)
+```
+
+```{r}
+q1 <- fviz_nbclust(df, FUN = hcut, method = "wss", 
+                   k.max = 10) +
+  ggtitle("(A) Elbow method")
+q2 <- fviz_nbclust(df, FUN = hcut, method = "silhouette", 
+                   k.max = 10) +
+  ggtitle("(B) Silhouette method")
+q3 <- fviz_nbclust(df, FUN = hcut, method = "gap_stat", 
+                   k.max = 10) +
+  ggtitle("(C) Gap statistic")
+
+gridExtra::grid.arrange(q1, q2, q3, nrow = 1)
+
+#3-5-10
+```
+
+pam 
+
+```{r}
+###k=2 için
+pam_2=pam(df, 2)
+print(pam_2)
+#table(pam_2$clustering, FPL$Position)
+#rand.index(pam_2$clustering, FPL$Position)
+
+pam_2$objective
+
+fviz_cluster(pam_2,
+             palette=c("#00AFBB","#FC4E07","#828282","#291891"),
+             ellipse.type = "t",
+             repel = FALSE,
+             ggtheme = theme_classic())
+
+###k=3 için
+pam_3=pam(df, 3)
+print(pam_3)
+
+pam_3$objective
+
+fviz_cluster(pam_3,
+             axes = c(1,2),
+             palette=c("#00AFBB","#FC4E07","#828282","#291891"),
+             ellipse.type = "t",
+             repel = FALSE,
+             ggtheme = theme_classic())
+
+fviz_cluster(pam_3,
+             axes = c(1,3),
+             palette=c("#00AFBB","#FC4E07","#828282","#291891"),
+             ellipse.type = "t",
+             repel = FALSE,
+             ggtheme = theme_classic())
+
+fviz_cluster(pam_3,
+             axes = c(2,3),
+             palette=c("#00AFBB","#FC4E07","#828282","#291891"),
+             ellipse.type = "t",
+             repel = FALSE,
+             ggtheme = theme_classic())
+
+###k=4 için
+pam_4=pam(df, 4)
+print(pam_4)
+
+pam_4$objective
+
+fviz_cluster(pam_4,
+             axes = c(1,2),
+             palette=c("#00AFBB","#FC4E07","#828282","#291891"),
+             ellipse.type = "t",
+             repel = FALSE,
+             ggtheme = theme_classic())
+
+fviz_cluster(pam_4,
+             axes = c(1,3),
+             palette=c("#00AFBB","#FC4E07","#828282","#291891"),
+             ellipse.type = "t",
+             repel = FALSE,
+             ggtheme = theme_classic())
+
+fviz_cluster(pam_4,
+             axes = c(2,3),
+             palette=c("#00AFBB","#FC4E07","#828282","#291891"),
+             ellipse.type = "t",
+             repel = FALSE,
+             ggtheme = theme_classic())
+
+
+
+###k=5 için
+pam_5=pam(df, 5)
+print(pam_5)
+
+pam_5$objective
+
+fviz_cluster(pam_5,
+             palette=c("#00AFBB","#FC4E07","#828282","#291891","#A00898"),
+             axes = c(1,2),
+             ellipse.type = "t",
+             repel = FALSE,
+             ggtheme = theme_classic())
+fviz_cluster(pam_5,
+             palette=c("#00AFBB","#FC4E07","#828282","#291891","#A00898"),
+             axes = c(1,3),
+             ellipse.type = "t",
+             repel = FALSE,
+             ggtheme = theme_classic())
+fviz_cluster(pam_5,
+             palette=c("#00AFBB","#FC4E07","#828282","#291891","#A00898"),
+             axes = c(2,3),
+             ellipse.type = "t",
+             repel = FALSE,
+             ggtheme = theme_classic())
+
+
+```
+
+hiyerarşik 
+
+##ward.D2 yöntemi ile
+```{r}
+hc_e=hclust(d=d_euc, method="ward.D2")
+fviz_dend(hc_e,cex=.5)
+
+hc_m=hclust(d=d_man, method="ward.D2")
+fviz_dend(hc_m,cex=.5) 
+
+hc_pear=hclust(d=d_pear, method="ward.D2")
+fviz_dend(hc_pear,cex=.5)
+
+coph_e=cophenetic(hc_e)
+cor_e=cor(d_euc,coph_e)
+
+coph_m=cophenetic(hc_m)
+cor_m=cor(d_man,coph_m)
+
+coph_pear=cophenetic(hc_pear)
+cor_p=cor(d_pear,coph_pear)
+
+cbind(cor_e,cor_m,cor_p)
+
+new<-NbClust(df, distance = "euclidean", min.nc=2, max.nc=10, 
+            method = "ward.D2", index = "all")
+#k=3
+nmw<-NbClust(df, distance = "manhattan", min.nc=2, max.nc=10, 
+            method = "ward.D2", index = "all")
+#k=3
+```
+
+##avarage linkage yöntemi ile
+```{r}
+hc_e2=hclust(d=d_euc, method="average")
+fviz_dend(hc_e2,cex=.5) 
+
+hc_m2=hclust(d=d_man, method="average")
+fviz_dend(hc_m2,cex=.5)
+
+hc_pear2=hclust(d=d_pear, method="average")
+fviz_dend(hc_pear2,cex=.5)
+
+coph_e2=cophenetic(hc_e2)
+cor_e2=cor(d_euc,coph_e2)
+
+coph_m2=cophenetic(hc_m2)
+cor_m2=cor(d_man,coph_m2)
+
+coph_pear2=cophenetic(hc_pear2)
+cor_p2=cor(d_pear,coph_pear2)
+
+cbind(cor_e2,cor_m2,cor_p2)
+
+nea<-NbClust(df, distance = "euclidean", min.nc=2, max.nc=10, 
+            method = "average", index = "all")
+#k=3
+
+nma<-NbClust(df, distance = "manhattan", min.nc=2, max.nc=10, 
+            method = "average", index = "all")
+#k=2
+```
+
+##median linkage yöntemi ile
+```{r}
+hc_e3=hclust(d=d_euc, method="median")
+fviz_dend(hc_e3,cex=.5) 
+
+hc_m3=hclust(d=d_man, method="median")
+fviz_dend(hc_m3,cex=.5)
+
+hc_pear3=hclust(d=d_pear, method="median")
+fviz_dend(hc_pear3,cex=.5)
+
+coph_e3=cophenetic(hc_e3)
+cor_e3=cor(d_euc,coph_e3)
+
+coph_m3=cophenetic(hc_m3)
+cor_m3=cor(d_man,coph_m3)
+
+coph_pear3=cophenetic(hc_pear3)
+cor_p3=cor(d_pear,coph_pear3)
+
+cbind(cor_e3,cor_m3,cor_p3)
+
+nem<-NbClust(df, distance = "euclidean", min.nc=2, max.nc=10, 
+            method = "median", index = "all")
+#k=2
+
+nmm<-NbClust(df, distance = "manhattan", min.nc=2, max.nc=10, 
+            method = "median", index = "all")
+#k=2
+```
+
+k=2
+```{r}
+#pearson-ward.D2
+hc_pw=eclust(df, "hclust", k=2, hc_metric = "pearson", hc_method = "ward.D2",graph = FALSE)
+
+fviz_dend(hc_pw, palette = c("#291891","#A00898"),
+          as.ggplot = TRUE, show_labels = FALSE, color_labels_by_k = TRUE, rect = TRUE)
+table(hc_pw$cluster)
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,2),
+             habillage = hc_pw$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,3),
+             habillage = hc_pw$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(2,3),
+             habillage = hc_pw$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+
+#manhattan-average
+hc_ma=eclust(df, "hclust", k=2, hc_metric = "manhattan", hc_method = "average",graph = FALSE)
+
+fviz_dend(hc_ma, palette = c("#291891","#A00898"),
+          as.ggplot = TRUE, show_labels = FALSE,color_labels_by_k = TRUE, rect = TRUE)
+hc_ma$cluster
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,2),
+             habillage = hc_ma$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,3),
+             habillage = hc_ma$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(2,3),
+             habillage = hc_ma$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+#manhattan-median
+hc_mm=eclust(df, "hclust", k=2, hc_metric = "manhattan", hc_method = "median",graph = FALSE)
+
+fviz_dend(hc_mm, palette = c("#291891","#A00898"),
+          as.ggplot = TRUE, show_labels = FALSE,color_labels_by_k = TRUE, 
+          rect = TRUE)
+table(hc_mm$cluster)
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             habillage = hc_mm$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+#euclidean-average
+hc_ea2=eclust(df, "hclust", k=2, hc_metric = "euclidean", hc_method = "average",graph = FALSE)
+
+fviz_dend(hc_ea2, palette = c("#291891","#A00898","green"),
+          as.ggplot = TRUE, show_labels = FALSE,color_labels_by_k = TRUE, rect = TRUE)
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,2),
+             habillage = hc_ea2$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,3),
+             habillage = hc_ea2$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(2,3),
+             habillage = hc_ea2$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+
+```
+
+k=3
+```{r}
+#euclidean-average
+hc_ea=eclust(df, "hclust", k=3, hc_metric = "euclidean", hc_method = "average",graph = FALSE)
+
+fviz_dend(hc_ea, palette = c("#291891","#A00898","green"),
+          as.ggplot = TRUE, show_labels = FALSE,color_labels_by_k = TRUE, rect = TRUE)
+table(hc_ea$cluster)
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,2),
+             habillage = hc_ea$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,3),
+             habillage = hc_ea$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(2,3),
+             habillage = hc_ea$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+
+#pearson-ward.D2
+hc_pw3=eclust(df, "hclust", k=3, hc_metric = "pearson", hc_method = "ward.D2",graph = FALSE)
+
+fviz_dend(hc_pw3, palette = c("#291891","#A00898","green"),
+          as.ggplot = TRUE, show_labels = FALSE, color_labels_by_k = TRUE, rect = TRUE)
+table(hc_pw3$cluster)
+
+
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,2),
+             habillage = hc_pw3$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,3),
+             habillage = hc_pw3$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(2,3),
+             habillage = hc_pw3$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+#manhattan-average
+hc_ma3=eclust(df, "hclust", k=3, hc_metric = "manhattan", hc_method = "average",graph = FALSE)
+
+fviz_dend(hc_ma3, palette = c("#291891","#A00898"),
+          as.ggplot = TRUE, show_labels = FALSE,color_labels_by_k = TRUE, rect = TRUE)
+hc_ma3$cluster
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,2),
+             habillage = hc_ma3$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,3),
+             habillage = hc_ma3$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(2,3),
+             habillage = hc_ma3$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+```
+k=5
+```{r}
+hc_pw5=eclust(df, "hclust", k=5, hc_metric = "pearson", hc_method = "ward.D2",graph = FALSE)
+
+fviz_dend(hc_pw5, palette = c("#00AFBB","#E7B800","#291891","#FC4E07","#696969"),
+          as.ggplot = TRUE, show_labels = FALSE, color_labels_by_k = TRUE, rect = TRUE)
+table(hc_pw5$cluster)
+
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,2),
+             habillage = hc_pw5$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,3),
+             habillage = hc_pw5$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(2,3),
+             habillage = hc_pw5$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+#Öklit-average
+hc_ea5=eclust(df, "hclust", k=5, hc_metric = "euclidean", hc_method = "average",graph = FALSE)
+
+fviz_dend(hc_ea5, palette = c("#00AFBB","#E7B800","#291891","#FC4E07","#696969"),
+          as.ggplot = TRUE, show_labels = FALSE,color_labels_by_k = TRUE, rect = TRUE)
+table(hc_ea5$cluster)
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,2),
+             habillage = hc_ea5$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,3),
+             habillage = hc_ea5$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(2,3),
+             habillage = hc_ea5$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+
+#manhattan-average
+hc_ma5=eclust(df, "hclust", k=5, hc_metric = "manhattan", hc_method = "average",graph = FALSE)
+
+fviz_dend(hc_ma5, palette = c("#291891","#A00898"),
+          as.ggplot = TRUE, show_labels = FALSE,color_labels_by_k = TRUE, rect = TRUE)
+hc_ma5$cluster
+
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,2),
+             habillage = hc_ma5$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(1,3),
+             habillage = hc_ma5$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+fviz_pca_ind(pca, title = "PCA - FPL data",
+             axes = c(2,3),
+             habillage = hc_ma5$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+```
+
+```{r}
+#Öklit-average
+hc_ea5=eclust(df, "hclust", k=5, hc_metric = "euclidean", hc_method = "average",graph = FALSE)
+
+fviz_dend(hc_ea5, palette = c("#00AFBB","#E7B800","#291891","#FC4E07","#696969"),
+          as.ggplot = TRUE, show_labels = FALSE,color_labels_by_k = TRUE, rect = TRUE)
+table(hc_ea5$cluster)
+
+fviz_pca_ind(pca, title = "PC1-PC2 Üzerinden Hiyararşik-Öklit-Average Kümeleri",
+             axes = c(1,2),
+             habillage = hc_ea5$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+fviz_pca_ind(pca, title = "PC1-PC3 Üzerinden Hiyararşik-Öklit-Average Kümeleri",
+             axes = c(1,3),
+             habillage = hc_ea5$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+fviz_pca_ind(pca, title = "PC2-PC3 Üzerinden Hiyararşik-Öklit-Average Kümeleri",
+             axes = c(2,3),
+             habillage = hc_ea5$cluster,
+             palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+
+fviz_dend(hc_ea5, k = 5, # Cut in four groups
+          k_colors = "jco",
+          type = "phylogenic", repel = TRUE,
+          phylo_layout = "layout_as_tree")
+
+fviz_dend(hc_ea5, k = 5, # Cut in four groups
+          k_colors = "jco",
+          type = "circular", repel = TRUE,
+          phylo_layout = "layout_as_tree")
+
+fviz_pca_biplot(pca, repel = FALSE,
+                axes = c(1,3),
+                habillage = hc_ea5$cluster,
+                col.var = "#2E9FDF",
+                gradient.cols=c("#00AFBB","#E7B800","#FC4E07"),
+                col.ind = "#696969",
+                pointsize = 1,
+                ggtheme=theme_minimal())
+hc_ea5$cluster
+```
+
+dendrogramların karşılaştırılması
+```{r}
+
+dend1=as.dendrogram(hc_pw5)
+dend2=as.dendrogram(hc_ma5)
+dend3=as.dendrogram(hc_ea5)
+
+
+
+
+dend_list1=dendlist(dend1,dend2)
+tanglegram(dend1, dend3,
+           highlight_distinct_edges = FALSE, # Turn-off dashed lines
+           common_subtrees_color_lines = FALSE, # Turn-off line colors
+           common_subtrees_color_branches = TRUE, # Color common branches
+           main = paste("entanglement =", round(entanglement(dend_list1), 2)))
+
+
+dend_list2=dendlist(dend1,dend3)
+tanglegram(dend1, dend3,
+           highlight_distinct_edges = FALSE, # Turn-off dashed lines
+           common_subtrees_color_lines = FALSE, # Turn-off line colors
+           common_subtrees_color_branches = TRUE, # Color common branches
+           main = paste("entanglement =", round(entanglement(dend_list2), 2)))
+
+dend_list3=dendlist(dend2,dend4)
+tanglegram(dend2, dend4,
+           highlight_distinct_edges = FALSE, # Turn-off dashed lines
+           common_subtrees_color_lines = FALSE, # Turn-off line colors
+           common_subtrees_color_branches = TRUE, # Color common branches
+           main = paste("entanglement =", round(entanglement(dend_list3), 2)))
+
+dend_list4=dendlist(dend1,dend5)
+tanglegram(dend1, dend5,
+           highlight_distinct_edges = FALSE, # Turn-off dashed lines
+           common_subtrees_color_lines = FALSE, # Turn-off line colors
+           common_subtrees_color_branches = TRUE, # Color common branches
+           main = paste("entanglement =", round(entanglement(dend_list4), 2)))
+
+
+set.seed(123)
+x <- dendlist(dend1,dend5) %>% untangle(method = "random", R = 10) 
+x %>% plot(main = paste("entanglement =", round(entanglement(x), 2)))
+
+x <- dendlist(dend2,dend4) %>% untangle(method = "step2side") 
+x %>% plot(main = paste("entanglement =", round(entanglement(x), 2)))
+```
+
+correlation
+```{r}
+
+
+dend_list=dendlist(dend1,dend2,dend3,dend4)
+cor.dendlist(dend_list, method = "cophenetic")
+cor.dendlist(dend_list, method = "baker")
+cors <- cor.dendlist(dend_list)
+library(corrplot)
+corrplot(cors, "pie", "lower")
+
+fviz_dend(hc_pw3, k = 3, # Cut in four groups
+          k_colors = "jco",
+          type = "phylogenic", repel = TRUE,
+          phylo_layout = "layout_as_tree")
+
+
+
+```
+
+
+

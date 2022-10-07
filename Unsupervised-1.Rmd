@@ -1,0 +1,365 @@
+---
+title: "Bike"
+author: "Buse Nur Baltacıoğlu"
+date: "11 04 2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r}
+library(cluster)
+library(factoextra)
+library(fpc)
+library(readr)
+library(fossil)
+```
+
+
+#1. Veri Hazırlığı
+```{r}
+bike=read_csv("C:/Users/Casper/Desktop/bike.csv")
+dim(bike)
+head(bike)
+colnames(bike)=c("Power","Distance","Heartrate","Speed","WindSpeed","Cadaence","Elevation","HillSlope","Temperature","Penalty","Cluster")
+
+table(bike[,11])
+#Hedef değişken yani kümeler old için çıkardık
+data=bike[,-11]
+#penaltı değişkeni diğer değişkenlerin varyansıyla elde edilen değişken old için çıkardık
+data=data[,-10]
+dim(data)
+
+
+boxplot(data)
+#Ölçekleri birbirinden farklı olduğu için standartlaştırdık
+df=scale(data)
+head(df)
+summary(df)
+
+boxplot(df, col = "bisque")
+hist(data$Power)
+
+
+```
+
+#2. Özdeğerler ve Özvektörler
+```{r}
+cor_df=cor(df)
+cor_df
+corrplot::corrplot.mixed(cor_df)
+#hız ile rüzgar hızı arasında doğrusal pozitif yönlü güçlü bir ilişki bulunmakta
+#Hız ile tepe eğimi arasında doğrusal negatif yönlü güçlü bir ilişki bulunmakta
+#Rüzgar hızı ve tepe eğimi arasında doğrusal negatif yönlü güçlü bir ilişki bulunmakta
+cov_df=cov(df)
+cov_df
+#Değişkenlerin ölçekleri ve değişimi farklı olduğu için standartlaştırmıştık bu durumda korelasyon matrisini kullanmamız daha doğru sonuçlar ortaya koyucaktır.
+
+eigen_df=eigen(cor_df)
+eigen_df$values
+#Burada ise özdeğerin 1'den büyük olanlarına göre karar vermeliyiz burada da 3 bileşenli yapmamızı ifade ediyor.
+eigen_df$vectors
+
+
+```
+
+#Uzaklık Matrisi
+```{r}
+d_euc=dist(df, method = "euclidean")
+d_e=round(as.matrix(d_euc)[1:5, 1:5], 1)
+fviz_dist(d_euc, order = FALSE)
+
+d_man=dist(df, method = "manhattan")
+d_m=round(as.matrix(d_man)[1:5, 1:5], 1)
+fviz_dist(d_man, order = FALSE)
+
+d_cor=get_dist(df, method = "pearson")
+d_c=round(as.matrix(d_cor)[1:5, 1:5], 1)
+fviz_dist(d_cor, order = FALSE)
+
+cbind(d_e, d_m, d_c)
+#Sonuçları kıyasladığımızda genellikle aynı yönde hareket etmişler zaten standartlaştırdığımız ve uç değerlerimiz olmadığı için öklit uzaklığını kullanabiliriz 
+```
+
+#3. Temel Bileşenlerin Oluşturulması
+```{r}
+set.seed(123)
+pca=prcomp(df, center = TRUE, scale. = TRUE)
+summary(pca)
+#Varyans açıklama oranların kümülatiflerine baktığımızda %42 ,%64, %80, %90,.. görünmekte amacımız daha az değişkenle yüksek açıklanma oranını sağlayabilmek olduğu için bizim için 3 bileşen yeterli görünmekte birde yukarıda açıkladığım baskınlığı yakalamaktayız.
+
+pca$sdev
+#korelasyon matrisinden elde edilen özdeğerlerin karekökü her bir özdeğer varyansı veriir karekökü ise standart sapmasıdır.
+pca$center
+#df'in ortalamalarını gösterir
+pca$scale
+#df'in std.dev verir
+pca$rotation
+#PC deki değişkenlerin baskınlıklarını verir
+```
+
+#4. Temel Bileşenlerin İncelenmesi
+```{r}
+fviz_eig(pca)
+#Bu grafiğe bakıldığında dirsek hissedilmiyor
+res_var=get_pca_var(pca)
+res_var$coord
+
+res_var$cor
+res_var$cos2
+#satır bazında toplam 1 
+res_var$contrib
+#sütun bazında toplam 100
+
+```
+
+#5. Bileşenlerin Görselleştirilmesi ve Yorumlanması
+```{r}
+set.seed(123)
+fviz_pca_ind(pca,
+             col.ind="cos2", 
+             gradient.cols=c("#00AFBB","#E7B800",
+                             "#FC4E07"),
+             pointsize=2,
+             repel = FALSE)
+
+fviz_pca_var(pca,
+             col.var="contrib", 
+             gradient.cols=c("#00AFBB","#E7B800",
+                             "#FC4E07"),
+             pointsize=2,
+             repel = FALSE)
+
+fviz_pca_biplot(pca, repel = FALSE,
+                axes = c(1,2),
+                col.var = "#2E9FDF",
+                gradient.cols=c("#00AFBB","#E7B800",
+                             "#FC4E07"),
+                col.ind = "#696969",
+                pointsize = 1,
+                ggtheme=theme_minimal())
+
+
+fviz_pca_biplot(pca, repel = FALSE,
+                axes = c(1,3),
+                col.var = "#2E9FDF",
+                gradient.cols=c("#00AFBB","#E7B800",
+                             "#FC4E07"),
+                col.ind = "#696969",
+                pointsize = 1,
+                ggtheme=theme_minimal())
+
+fviz_pca_biplot(pca, repel = FALSE,
+                axes = c(2,3),
+                col.var = "#2E9FDF",
+                gradient.cols=c("#00AFBB","#E7B800",
+                             "#FC4E07"),
+                col.ind = "#696969",
+                pointsize = 1,
+                ggtheme=theme_minimal())
+
+```
+
+#6. k-means
+```{r}
+fviz_nbclust(df, kmeans, method = "wss") 
+fviz_nbclust(df, kmeans, method = "silhouette")
+fviz_nbclust(df, kmeans, nstart=25, method = "gap_stat", nboot = 50)
+```
+
+
+###k=4 için
+```{r}
+set.seed(123)
+km_4=kmeans(df, 4, nstart = 25)
+print(km_4)
+#Varyans açıklama oranı = 61.1%
+table(km_4$cluster, bike$Cluster)
+rand.index(km_4$cluster, bike$Cluster)
+#(0.8327271)
+
+
+km_4$cluster
+km_4$size
+km_4$centers
+km_4$tot.withinss
+
+
+fviz_cluster(km_4, data = df,
+             palette = c("#00AFBB","#E7B800","#291891","#FC4E07"),
+              ellipse.type = "euclid", 
+              star.plot=TRUE, 
+              repel=FALSE,
+              ggtheme=theme_minimal())
+```
+
+###k=6 için
+```{r}
+set.seed(123)
+km_6=kmeans(df, 6, nstart = 25)
+print(km_6)
+#Varyans açıklama oranı = 72.8%
+table(km_6$cluster, bike$Cluster)
+rand.index(km_6$cluster, bike$Cluster)
+#(0.8962077)
+
+
+km_6$cluster
+km_6$size
+km_6$centers
+km_6$tot.withinss
+
+
+fviz_cluster(km_6, data = df,
+             palette = c("#FC4E07","#E7B800","#2E9FDF","#FA5E08","#696969","pink"),
+              ellipse.type = "euclid", 
+              star.plot=TRUE, 
+              repel=FALSE,
+              ggtheme=theme_minimal())
+
+```
+
+###k=9 için
+```{r}
+set.seed(123)
+km_9=kmeans(df, 9, nstart = 25)
+print(km_9)
+#Varyans açıklama oranı = 79.8%
+table(km_9$cluster, bike$Cluster)
+rand.index(km_9$cluster, bike$Cluster)
+#(0.8661111)
+
+km_9$cluster
+km_9$size
+km_9$centers
+km_9$tot.withinss
+
+fviz_cluster(km_9, data = df,
+             palette=c("#00AFBB","#E7B800","#291891","#FC4E07","#696969","#997548","#918457","purple","brown"),
+              ellipse.type = "euclid", 
+              star.plot=TRUE, 
+              repel=FALSE,
+              ggtheme=theme_minimal())
+
+
+```
+
+#7. k-medoids
+#7.1. PAM
+```{r}
+set.seed(123)
+fviz_nbclust(df, pam, method = "wss")
+fviz_nbclust(df, pam, method = "silhouette")
+fviz_nbclust(df, pam, method = "gap_stat")
+```
+
+###k=4 için
+```{r}
+pam_4=pam(df, 4)
+print(pam_4)
+table(pam_4$clustering, bike$Cluster)
+rand.index(pam_4$clustering, bike$Cluster)
+
+pam_4$medoids
+pam_4$clustering
+pam_4$silinfo
+
+fviz_cluster(pam_4,
+             palette=c("#00AFBB","#FC4E07","#828282","#291891"),
+             ellipse.type = "t",
+             repel = FALSE,
+             ggtheme = theme_classic())
+```
+
+###k=7 için
+```{r}
+pam_7=pam(df, 7)
+print(pam_7)
+table(pam_7$clustering, bike$Cluster)
+rand.index(pam_7$clustering, bike$Cluster)
+
+pam_7$medoids
+pam_7$clustering
+pam_7$silinfo
+
+fviz_cluster(pam_7,
+             palette=c("#00AFBB","#FC4E07","#828282","#291891"),
+             ellipse.type = "t",
+             repel = FALSE,
+             ggtheme = theme_classic())
+```
+
+#7.2. CLARA
+```{r}
+set.seed(123)
+fviz_nbclust(df, clara, method = "wss")
+fviz_nbclust(df, clara, method = "silhouette")
+fviz_nbclust(df, clara, method = "gap")
+
+```
+
+###k=5 için
+```{r}
+clara_5=clara(df, 5, samples = 50, pamLike = TRUE)
+print(clara_5)
+
+clara_5$objective
+#Amaç fonksiyonunu minimum yapan değer
+table(clara_5$clustering, bike$Cluster)
+rand.index(clara_5$clustering, bike$Cluster)
+
+fviz_cluster(clara_5, 
+             axes = c(1,2),
+             palette=c("#00AFBB","#E7B800","#291891","#FC4E07","#696969"),
+             ellipse.type = "t",
+             repel = FALSE,
+             geom = "point",
+             pointsize = 1,
+             ggtheme = theme_classic())
+
+fviz_cluster(clara_5, 
+             axes = c(1,3),
+             palette=c("#00AFBB","#E7B800","#291891","#FC4E07","#696969"),
+             ellipse.type = "t",
+             repel = FALSE,
+             geom = "point",
+             pointsize = 1,
+             ggtheme = theme_classic())
+
+fviz_cluster(clara_5, 
+             axes = c(2,3),
+             palette=c("#00AFBB","#E7B800","#291891","#FC4E07","#696969"),
+             ellipse.type = "t",
+             repel = FALSE,
+             geom = "point",
+             pointsize = 1,
+             ggtheme = theme_classic())
+
+```
+
+###k=7 için
+```{r}
+set.seed(123)
+clara_7=clara(df, 7, samples = 50, pamLike = TRUE)
+print(clara_7)
+clara_7$objective
+
+table(clara_7$clustering, bike$Cluster)
+rand.index(clara_7$clustering, bike$Cluster)
+```
+
+###k=10 için
+```{r}
+set.seed(123)
+clara_10=clara(df, 10, samples = 50, pamLike = TRUE)
+print(clara_10)
+clara_10$objective
+
+table(clara_10$clustering, bike$Cluster)
+rand.index(clara_10$clustering, bike$Cluster)
+```
+
+
+
+
+
